@@ -1,0 +1,3 @@
+/home/dmitry/finalOpticalFlow/CMakeFiles/edit_cache.dir
+/home/dmitry/finalOpticalFlow/CMakeFiles/rebuild_cache.dir
+/home/dmitry/finalOpticalFlow/CMakeFiles/OpticalFlow.dir

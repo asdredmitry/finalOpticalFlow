@@ -288,7 +288,7 @@ void checkOpticalFlow(VideoCapture & cap)
         imshow("CheckOpticalFlow", frame);
         swap(points[1], points[0]);
         swap(grayPrev, grayCur);
-        waitKey(100);
+        waitKey(25);
     }
 }
 void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & pointsCur, vector<Point2f> & velocity, Size & winSize, Mat & W)
@@ -395,7 +395,7 @@ void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & 
                 Point2f pt(tmp.at<double>(0,1),tmp.at<double>(0,0));
                 //pt.x /= sqrt(pow(pt.x,2) + pow(pt.y,2));
                 //pt.y /= sqrt(pow(pt.x,2) + pow(pt.y,2));
-                std :: cout << pt << " pt " << std :: endl;
+                //std :: cout << pt << " pt " << std :: endl;
                 velocity[i] += -pt;
             }
         }
@@ -406,7 +406,7 @@ void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & 
         }
         else
             velocity[i] = Point2f(0.0, 0.0);
-        std :: cout << "--------------------------------------------------" << std :: endl;
+        //td :: cout << "--------------------------------------------------" << std :: endl;
     }
 }
 int main(int argv, char ** argc)

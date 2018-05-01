@@ -13,7 +13,7 @@ using namespace cv;
 using namespace std;
 
 const double mu = 0;
-const double sigma = 1;
+const double sigma = 4;
 
 const double eps = 1e-9;
 const double epsForSpeed = 0.1;
@@ -50,7 +50,7 @@ double diffTime(Point2f & point, Mat & cur, Mat & prev)
 }
 double gaussianFunc(double x)
 {
-    return (1/sqrt(2*sigma*M_PI))*exp(-0.5*pow((x - mu)/sigma,2));
+    return (1/sqrt(2*M_PI))*exp(-0.5*pow((x - mu)/sigma,2));
 }
 void drawArrow(Mat & mat, Point2f & pt1, Point2f & pt2, Scalar sc)
 {
@@ -64,6 +64,23 @@ void translateMat(Mat & mat, double offsetX, double offsetY)
 {
     Mat translateMat = (Mat_<double>(2, 3) << 1, 0 , offsetX, 0 , 1, offsetY);
     warpAffine(mat, mat, translateMat, mat.size());
+}
+void fillInWeightMatrix(Mat & W, Size & winSize, bool identity)
+{
+    W = Mat :: zeros(winSize.area(), winSize.area(), CV_64F);
+    if(identity)
+    {
+        for(int i = 0; i < winSize.area(); i++)
+            W.at<double>(i,i) = 1;
+    }
+    else
+    {
+        for(int i = 0; i < winSize.height; i++)
+        {
+            for(int j = 0; j < winSize.width ; j++)
+                W.at<double>(i*winSize.width + j,i*winSize.width + j) = gaussianFunc(sqrt(pow(i - winSize.height/2, 2) + pow(j - winSize.width/2, 2)));
+        }
+    }
 }
 void opticalFlowOpenCV(VideoCapture & cap)
 {
@@ -96,7 +113,8 @@ void opticalFlowOpenCV(VideoCapture & cap)
         }
         if(grayPrev.empty())
             grayPrev = grayCur.clone();
-        calcOpticalFlowPyrLK(grayPrev, grayCur, points[0], points[1], status, err, winSize, 1, termcrit, 10, 0.001);
+        if(points[0].size() > 10)
+               calcOpticalFlowPyrLK(grayPrev, grayCur, points[0], points[1], status, err, winSize, 1, termcrit, 10, 0.001);
         int k = 0;
         for(int i = k = 0; i < points[1].size(); i++)
         {
@@ -165,18 +183,15 @@ void opticalFlowNaive(VideoCapture & cap)
 void opticalFlowNaiveWeight(VideoCapture & cap)
 {
     Mat frame, grayCur, grayPrev;
-    Size winSize(10,10);
+    Size winSize(3,3);
     vector<Point2f> curPoints;
     vector<Point2f> velocity;
     Size amountPoints(30,30);
     bool first = true;
     namedWindow("OpticalFlowNaiveWeight");
-    Mat W = Mat :: zeros(winSize.area(), winSize.area(), CV_64F);
-    for(int i = 0; i < winSize.height; i++)
-    {
-        for(int j = 0; j < winSize.width; j++)
-            W.at<double>(i*winSize.width + j,i*winSize.width + j) = gaussianFunc(sqrt(pow(i,2) + pow(j,2)));
-    }
+    Mat W;
+    fillInWeightMatrix(W, winSize, true);
+    std :: cout << W;
     while(true)
     {
         cap >> frame;
@@ -226,12 +241,9 @@ void checkOpticalFlow(VideoCapture & cap)
     vector<uchar> status;
     vector<float> err;
 
-    Mat W = Mat :: zeros(winSize.area(), winSize.area(), CV_64F);
-    for(int i = 0; i < winSize.height; i++)
-    {
-        W.at<double>(i,i) = 1;
-    }
-
+    Mat W;
+    fillInWeightMatrix(W, winSize, true);
+    std :: cout << W << std :: endl;
     while(true)
     {
         cap >> frame;
@@ -243,18 +255,17 @@ void checkOpticalFlow(VideoCapture & cap)
         if(points[0].size() < critPoints)
         {
             goodFeaturesToTrack(grayCur,pointsTmp, 100, 0.01, 10, Mat(), 3,3,0,0.4);
-            cornerSubPix(grayCur, pointsTmp, subPixWinSize, Size(-1,-1), termcrit);
+            if(points[0].size() > 10)
+                cornerSubPix(grayCur, pointsTmp, subPixWinSize, Size(-1,-1), termcrit);
             for(int i = 0; i < pointsTmp.size(); i++)
                 points[0].push_back(pointsTmp[i]);
         }
-        //for(int i = 0; i < points[0].size(); i++)
-        //{
-        //        points[0][i].x += (int)(points[0][i].x < 40)*(40) - (int)(points[0][i].x > grayCur.cols - 40)*(40);
-        //        points[0][i].y += (int)(points[0][i].y < 40)*(40) - (int)(points[0][i].y > grayCur.rows - 40)*(40);
-        //}
         velocity = points[0];
-        calcOpticalFlowWeight(grayPrev, grayCur, points[0], velocity, winSize, W);
-        calcOpticalFlowPyrLK(grayPrev, grayCur, points[0], points[1], status, err, winSize, 1, termcrit, 10, 0.001);
+        if(points[0].size() > 10)
+            //calcOpticalFlowWeight(grayPrev, grayCur, points[0], velocity, winSize, W);
+            calcOpticalFlowWeightIter(grayPrev, grayCur, points[0], velocity, winSize, W, 20 );
+        if(points[0].size() > 10)
+            calcOpticalFlowPyrLK(grayPrev, grayCur, points[0], points[1], status, err, winSize, 1, termcrit, 10, 0.001);
         int k = 0;
         for(int i = k = 0; i < points[1].size(); i++)
         {
@@ -275,27 +286,28 @@ void checkOpticalFlow(VideoCapture & cap)
         imshow("CheckOpticalFlow", frame);
         swap(points[1], points[0]);
         swap(grayPrev, grayCur);
-        waitKey(25);
+        waitKey(100);
     }
 }
-void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & pointsCur, vector<Point2f> & pointsNext, Size & winSize, Mat & W)
+void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & pointsCur, vector<Point2f> & velocity, Size & winSize, Mat & W)
 {
-    int l = 0;
-    for(vector<Point2f> :: iterator cur = pointsCur.begin(); cur < pointsCur.end(); cur++)
+    for(int i = 0; i < pointsCur.size(); i++)
     {
-        Mat A(winSize.area(), 2, CV_64F);
-        Mat b(winSize.area(), 1, CV_64F);
-        Mat tmp, B;
-        for(int i = 0; i < winSize.height; i++)
+        Point2f current = pointsCur[i];
+        Mat A(winSize.area(),2,CV_64F);
+        Mat b(winSize.area(),1,CV_64F);
+        Mat tmp;
+        Mat B;
+        for(int i1 = 0; i1 < winSize.height; i1++)
         {
             for(int j = 0; j < winSize.width; j++)
             {
                 Point2f tpq;
-                tpq.y = cur->y + i - winSize.height/2;
-                tpq.x = cur->x + j - winSize.width/2;
-                A.at<double>(i*winSize.width + j, 1) = diff(tpq, grayCur, 1);
-                A.at<double>(i*winSize.width + j, 0) = diff(tpq, grayCur, 0);
-                b.at<double>(i*winSize.width + j, 0) = diffTime(tpq, grayCur, grayPrev);
+                tpq.y = current.y + i1 - winSize.height/2;
+                tpq.x = current.x + j - winSize.width/2;
+                A.at<double>(i1*winSize.width + j,1) = diff(tpq,grayCur,true);
+                A.at<double>(i1*winSize.width + j,0) = diff(tpq,grayCur,false);
+                b.at<double>(i1*winSize.width + j,0) = diffTime(tpq,grayCur ,grayPrev);
             }
         }
         transpose(A,B);
@@ -303,7 +315,7 @@ void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & poin
         B = tmp.clone();
         tmp = B*A;
         B = tmp.clone();
-        if(fabs(determinant(B)) > eps)
+        if(fabs(determinant(B)) > eps*100 )
         {
             transpose(A,tmp);
             A = tmp.clone();
@@ -314,55 +326,47 @@ void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & poin
             tmp = B*W;
             B = tmp.clone();
             tmp = B*b;
-            Point2f pt(tmp.at<double>(0,1), tmp.at<double>(0, 0));
+            Point2f pt(tmp.at<double>(0,1),tmp.at<double>(0,0));
             if(norm(pt) > epsForSpeed)
             {
-                pt.x /= -norm(pt);
-                pt.y /= -norm(pt);
+                pt.x /= sqrt(pow(pt.x,2) + pow(pt.y,2));
+                pt.y /= sqrt(pow(pt.x,2) + pow(pt.y,2));
+                velocity[i] = -pt;
             }
             else
-            {
-                pt.x = 0;
-                pt.y = 0;
-            }
-            pointsNext[l] = pt;
+                velocity[i] = Point2f(0,0);
         }
         else
         {
-            pointsNext[l] = Point2f(0,0);
+            velocity[i] = Point2f(0,0);
         }
-        l++;
     }
 }
-void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & pointsCur, vector<Point2f> & vel, Size & winSize, Mat & W, int iter)
+void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & pointsCur, vector<Point2f> & velocity, Size & winSize, Mat & W, int iter)
 {
-
-    namedWindow("test");
-    Mat tmp1;
-    for(int i1 = 0; i1 < pointsCur.size(); i1++)
+    Mat tmpWarp;
+    for(int i = 0; i < pointsCur.size(); i++)
     {
-        for(int j = 0; j < iter; j++)
+        Point2f current = pointsCur[i];
+        velocity[i] = Point2f(0.0 , 0.0);
+        for(int s = 0; s < iter; s++)
         {
-            if(j == 0)
-                vel[i1] = Point2f(0, 0);
-            tmp1 = grayCur.clone();
-            if(j)
-                translateMat(tmp1, vel[i1].x, -vel[i1].y);
-            //imshow("test",tmp1);
-
-            Mat A(winSize.area(), 2, CV_64F);
-            Mat B, b(winSize.area(), 1, CV_64F);
+            tmpWarp = grayCur.clone();
+            translateMat(tmpWarp, -velocity[i].x,-velocity[i].y );
+            Mat A(winSize.area(),2,CV_64F);
+            Mat b(winSize.area(),1,CV_64F);
             Mat tmp;
-            for(int i = 0; i < winSize.height; i++)
+            Mat B;
+            for(int i1 = 0; i1 < winSize.height; i1++)
             {
                 for(int j = 0; j < winSize.width; j++)
                 {
                     Point2f tpq;
-                    tpq.y = pointsCur[i].y + i - winSize.height/2;
-                    tpq.x = pointsCur[i].x + j - winSize.width/2;
-                    A.at<double>(i*winSize.width + j, 1) = diff(tpq, tmp1, 1);
-                    A.at<double>(i*winSize.width + j, 0) = diff(tpq, tmp1, 0);
-                    b.at<double>(i*winSize.width + j, 0) = diffTime(tpq, tmp1, grayPrev);
+                    tpq.y = current.y + i1 - winSize.height/2;
+                    tpq.x = current.x + j - winSize.width/2;
+                    A.at<double>(i1*winSize.width + j,1) = diff(tpq,tmpWarp,true);
+                    A.at<double>(i1*winSize.width + j,0) = diff(tpq,tmpWarp,false);
+                    b.at<double>(i1*winSize.width + j,0) = diffTime(tpq,tmpWarp,grayPrev);
                 }
             }
             transpose(A,B);
@@ -370,7 +374,7 @@ void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & 
             B = tmp.clone();
             tmp = B*A;
             B = tmp.clone();
-            if(fabs(determinant(B)) > eps)
+            if(fabs(determinant(B)) > eps*100 )
             {
                 transpose(A,tmp);
                 A = tmp.clone();
@@ -381,19 +385,28 @@ void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & 
                 tmp = B*W;
                 B = tmp.clone();
                 tmp = B*b;
-                Point2f pt(tmp.at<double>(0,1), tmp.at<double>(0, 0));
-                pt.x *= -1;
-                pt.y *= -1;
-                vel[i1] += pt;
+                Point2f pt(tmp.at<double>(0,1),tmp.at<double>(0,0));
+                if(norm(pt) > epsForSpeed)
+                {
+                    //pt.x /= sqrt(pow(pt.x,2) + pow(pt.y,2));
+                    //pt.y /= sqrt(pow(pt.x,2) + pow(pt.y,2));
+                    velocity[i] += -pt;
+                }
+                else
+                    velocity[i] += Point2f(0,0);
             }
-            if(i1 == 0)
-                std :: cout << vel[i1] << std :: endl;
-            if(norm(vel[i1]) > epsForSpeed)
+            else
             {
-                vel[i1].x /= norm(vel[i1]);
-                vel[i1].y /= norm(vel[i1]);
+                velocity[i] += Point2f(0,0);
             }
         }
+        if(norm(velocity[i]) > epsForSpeed)
+        {
+            velocity[i].x /= norm(velocity[i]);
+            velocity[i].y /= norm(velocity[i]);
+        }
+        else
+            velocity[i] = Point2f(0.0, 0.0);
     }
 }
 int main(int argv, char ** argc)
@@ -417,7 +430,7 @@ int main(int argv, char ** argc)
         std :: cout << "Cannot open video flow" << std :: endl;
         return 0;
     }
-    //opticalFlowOpenCV(cap);
+    //pticalFlowOpenCV(cap);
     //opticalFlowNaiveWeight(cap);
     checkOpticalFlow(cap);
 }

@@ -42,7 +42,9 @@ void calcOpticalFlowWeightIter(Mat &grayPrev, Mat &grayCur, vector<Point2f> &poi
 double diff(Point2f & point, Mat & cur,bool x)
 {
     //std :: cout << point.x  << " points      " << point.y << std :: endl;
+    //std ::  cout << point.y + (int)!x << " " << point.x + (int)x << " " << point.y - (int)!x << " " << point.x - (int)x << std :: endl;
     return ((double)((double)cur.at<uchar>(point.y + (int)!x ,point.x + (int)x) - (double)cur.at<uchar>(point.y - (int)!x,point.x - (int)x)))/2;
+
 }
 double diffTime(Point2f & point, Mat & cur, Mat & prev)
 {
@@ -242,7 +244,7 @@ void checkOpticalFlow(VideoCapture & cap)
     vector<float> err;
 
     Mat W;
-    fillInWeightMatrix(W, winSize, true);
+    fillInWeightMatrix(W, winSize, false);
     std :: cout << W << std :: endl;
     while(true)
     {
@@ -305,11 +307,16 @@ void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & poin
                 Point2f tpq;
                 tpq.y = current.y + i1 - winSize.height/2;
                 tpq.x = current.x + j - winSize.width/2;
+                //std :: cout << tpq << std :: endl;
+                //std :: cout << " y - " << std :: endl;
                 A.at<double>(i1*winSize.width + j,1) = diff(tpq,grayCur,true);
+                //std :: cout << " x -" << std :: endl;
                 A.at<double>(i1*winSize.width + j,0) = diff(tpq,grayCur,false);
                 b.at<double>(i1*winSize.width + j,0) = diffTime(tpq,grayCur ,grayPrev);
             }
         }
+        //std :: cout << "Matrix A -" << std :: endl;
+        //std :: cout << A << std :: endl;
         transpose(A,B);
         tmp = B*W;
         B = tmp.clone();
@@ -386,18 +393,10 @@ void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & 
                 B = tmp.clone();
                 tmp = B*b;
                 Point2f pt(tmp.at<double>(0,1),tmp.at<double>(0,0));
-                if(norm(pt) > epsForSpeed)
-                {
-                    //pt.x /= sqrt(pow(pt.x,2) + pow(pt.y,2));
-                    //pt.y /= sqrt(pow(pt.x,2) + pow(pt.y,2));
-                    velocity[i] += -pt;
-                }
-                else
-                    velocity[i] += Point2f(0,0);
-            }
-            else
-            {
-                velocity[i] += Point2f(0,0);
+                //pt.x /= sqrt(pow(pt.x,2) + pow(pt.y,2));
+                //pt.y /= sqrt(pow(pt.x,2) + pow(pt.y,2));
+                std :: cout << pt << " pt " << std :: endl;
+                velocity[i] += -pt;
             }
         }
         if(norm(velocity[i]) > epsForSpeed)
@@ -407,6 +406,7 @@ void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & 
         }
         else
             velocity[i] = Point2f(0.0, 0.0);
+        std :: cout << "--------------------------------------------------" << std :: endl;
     }
 }
 int main(int argv, char ** argc)

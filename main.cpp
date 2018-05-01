@@ -30,7 +30,7 @@ void drawArrow(Mat &mat, Point2f &pt1, Point2f &pt2, Scalar sc);
 //double opticalFlowOpenCV(VideoCapture &cap);
 //double opticalFlowNaive(VideoCapture &cap);
 void calcOpticalFlowWeight(Mat &grayPrev, Mat &grayCur, vector<Point2f> &pointsCur, vector<Point2f> &pointsNext, Size &winSize, Mat &W);
-
+void calcOpticalFlowWeightIter(Mat &grayPrev, Mat &grayCur, vector<Point2f> &pointsCur, vector<Point2f> &vel, Size &winSize, Mat &W, int iter);
 //double diff(Point2f & pt, Mat & mat, bool x)
 //{
 //    return ((double)mat.at<uchar>(pt.y + (int)!x,pt.x + (int)x) - (double)mat.at<uchar>(pt.y - (int)!x,pt.x - (int)x))/2;
@@ -59,6 +59,11 @@ void drawArrow(Mat & mat, Point2f & pt1, Point2f & pt2, Scalar sc)
     line(mat, pt1, end, sc, 1.5);
     line(mat, end, Point2f(end.x - 2*(v.x*cos(M_PI/4) + v.y*sin(M_PI/4)), end.y - 2*(-v.x*sin(M_PI/4) + v.y*cos(M_PI/4))), sc, 1.5);
     line(mat, end, Point2f(end.x - 2*(v.x*cos(M_PI/4) - v.y*sin(M_PI/4)), end.y - 2*(v.x*sin(M_PI/4) + v.y*cos(M_PI/4))), sc, 1.5);
+}
+void translateMat(Mat & mat, double offsetX, double offsetY)
+{
+    Mat translateMat = (Mat_<double>(2, 3) << 1, 0 , offsetX, 0 , 1, offsetY);
+    warpAffine(mat, mat, translateMat, mat.size());
 }
 void opticalFlowOpenCV(VideoCapture & cap)
 {
@@ -224,8 +229,7 @@ void checkOpticalFlow(VideoCapture & cap)
     Mat W = Mat :: zeros(winSize.area(), winSize.area(), CV_64F);
     for(int i = 0; i < winSize.height; i++)
     {
-        for(int j = 0; j < winSize.width; j++)
-            W.at<double>(i*winSize.width + j,i*winSize.width + j) = gaussianFunc(sqrt(pow(i,2) + pow(j,2)));
+        W.at<double>(i,i) = 1;
     }
 
     while(true)
@@ -328,6 +332,68 @@ void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & poin
             pointsNext[l] = Point2f(0,0);
         }
         l++;
+    }
+}
+void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & pointsCur, vector<Point2f> & vel, Size & winSize, Mat & W, int iter)
+{
+
+    namedWindow("test");
+    Mat tmp1;
+    for(int i1 = 0; i1 < pointsCur.size(); i1++)
+    {
+        for(int j = 0; j < iter; j++)
+        {
+            if(j == 0)
+                vel[i1] = Point2f(0, 0);
+            tmp1 = grayCur.clone();
+            if(j)
+                translateMat(tmp1, vel[i1].x, -vel[i1].y);
+            //imshow("test",tmp1);
+
+            Mat A(winSize.area(), 2, CV_64F);
+            Mat B, b(winSize.area(), 1, CV_64F);
+            Mat tmp;
+            for(int i = 0; i < winSize.height; i++)
+            {
+                for(int j = 0; j < winSize.width; j++)
+                {
+                    Point2f tpq;
+                    tpq.y = pointsCur[i].y + i - winSize.height/2;
+                    tpq.x = pointsCur[i].x + j - winSize.width/2;
+                    A.at<double>(i*winSize.width + j, 1) = diff(tpq, tmp1, 1);
+                    A.at<double>(i*winSize.width + j, 0) = diff(tpq, tmp1, 0);
+                    b.at<double>(i*winSize.width + j, 0) = diffTime(tpq, tmp1, grayPrev);
+                }
+            }
+            transpose(A,B);
+            tmp = B*W;
+            B = tmp.clone();
+            tmp = B*A;
+            B = tmp.clone();
+            if(fabs(determinant(B)) > eps)
+            {
+                transpose(A,tmp);
+                A = tmp.clone();
+                tmp = B.inv();
+                B = tmp.clone();
+                tmp = B*A;
+                B = tmp.clone();
+                tmp = B*W;
+                B = tmp.clone();
+                tmp = B*b;
+                Point2f pt(tmp.at<double>(0,1), tmp.at<double>(0, 0));
+                pt.x *= -1;
+                pt.y *= -1;
+                vel[i1] += pt;
+            }
+            if(i1 == 0)
+                std :: cout << vel[i1] << std :: endl;
+            if(norm(vel[i1]) > epsForSpeed)
+            {
+                vel[i1].x /= norm(vel[i1]);
+                vel[i1].y /= norm(vel[i1]);
+            }
+        }
     }
 }
 int main(int argv, char ** argc)

@@ -244,7 +244,7 @@ void checkOpticalFlow(VideoCapture & cap)
     vector<float> err;
 
     Mat W;
-    fillInWeightMatrix(W, winSize, false);
+    fillInWeightMatrix(W, winSize, true);
     std :: cout << W << std :: endl;
     while(true)
     {
@@ -262,10 +262,16 @@ void checkOpticalFlow(VideoCapture & cap)
             for(int i = 0; i < pointsTmp.size(); i++)
                 points[0].push_back(pointsTmp[i]);
         }
+
+        for(vector<Point2f> :: iterator it = points[0].begin(); it < points[0].end(); it++)
+        {
+            if(it->x > frame.cols - 60 || it->x < 60 || it->y > frame.rows - 60 || it->y <  60)
+                points[0].erase(it);
+        }
         velocity = points[0];
         if(points[0].size() > 10)
             //calcOpticalFlowWeight(grayPrev, grayCur, points[0], velocity, winSize, W);
-            calcOpticalFlowWeightIter(grayPrev, grayCur, points[0], velocity, winSize, W, 20 );
+            calcOpticalFlowWeightIter(grayPrev, grayCur, points[0], velocity, winSize, W, 4 );
         if(points[0].size() > 10)
             calcOpticalFlowPyrLK(grayPrev, grayCur, points[0], points[1], status, err, winSize, 1, termcrit, 10, 0.001);
         int k = 0;
@@ -309,9 +315,9 @@ void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & poin
                 tpq.x = current.x + j - winSize.width/2;
                 //std :: cout << tpq << std :: endl;
                 //std :: cout << " y - " << std :: endl;
-                A.at<double>(i1*winSize.width + j,1) = diff(tpq,grayCur,true);
+                A.at<double>(i1*winSize.width + j,0) = diff(tpq,grayCur,true);
                 //std :: cout << " x -" << std :: endl;
-                A.at<double>(i1*winSize.width + j,0) = diff(tpq,grayCur,false);
+                A.at<double>(i1*winSize.width + j,1) = diff(tpq,grayCur,false);
                 b.at<double>(i1*winSize.width + j,0) = diffTime(tpq,grayCur ,grayPrev);
             }
         }
@@ -333,12 +339,13 @@ void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & poin
             tmp = B*W;
             B = tmp.clone();
             tmp = B*b;
-            Point2f pt(tmp.at<double>(0,1),tmp.at<double>(0,0));
+            Point2f pt(tmp.at<double>(0,0),tmp.at<double>(0,1));
             if(norm(pt) > epsForSpeed)
             {
                 pt.x /= sqrt(pow(pt.x,2) + pow(pt.y,2));
                 pt.y /= sqrt(pow(pt.x,2) + pow(pt.y,2));
-                velocity[i] = -pt;
+                velocity[i].x = -pt.x;
+                velocity[i].y = -pt.y;
             }
             else
                 velocity[i] = Point2f(0,0);
@@ -351,70 +358,64 @@ void calcOpticalFlowWeight(Mat & grayPrev, Mat & grayCur, vector<Point2f> & poin
 }
 void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & pointsCur, vector<Point2f> & velocity, Size & winSize, Mat & W, int iter)
 {
-    Mat tmpWarp;
+    Mat grayTmp[iter];
+    Mat grayPrevTmp[iter];
+    Size winSizeTmp;
+    for(int j = 0; j < iter; j++)
+    {
+        resize(grayCur, grayTmp[j], Size(0,0), pow(2,j), pow(2,j));
+        resize(grayPrev, grayPrevTmp[j], Size(0,0), pow(2,j), pow(2,j));
+    }
     for(int i = 0; i < pointsCur.size(); i++)
     {
-        Point2f current = pointsCur[i];
-        velocity[i] = Point2f(0.0 , 0.0);
+        winSizeTmp = winSize;
+        int mult = 1;
+        velocity[i] = Point2f(0, 0);
         for(int s = 0; s < iter; s++)
         {
-            //tmpWarp = Mat_<uchar>(2*winSize.width, 2*winSize.height);
-            //for(int y = 0; y < 2*winSize.height; y++)
-            //{
-            //    for(int x = 0; x < 2*winSize.width; x++)
-            //        tmpWarp.at<uchar>(y,x) = grayCur.at<uchar>(current.y + y - winSize.height, current.x + x - winSize.height);
-            //}
-            tmpWarp = grayCur(Rect(current.x, current.y, winSize.width*2, winSize.height*2));
-            //imshow("namedWindow", tmpWarp);
-            //waitKey(25);
-            //translateMat(tmpWarp, -velocity[i].x,-velocity[i].y );
-            Mat A(winSize.area(),2,CV_64F);
-            Mat b(winSize.area(),1,CV_64F);
+            Point2f current = pointsCur[i];
+            Mat A(winSizeTmp.area(),2,CV_64F);
+            Mat b(winSizeTmp.area(),1,CV_64F);
             Mat tmp;
             Mat B;
-            for(int i1 = 0; i1 < winSize.height; i1++)
+            std :: cout << winSizeTmp << std :: endl;
+            for(int i1 = 0; i1 < winSizeTmp.height; i1++)
             {
-                for(int j = 0; j < winSize.width; j++)
+                for(int j = 0; j < winSizeTmp.width; j++)
                 {
                     Point2f tpq;
-                    tpq.y = winSize.height + i1 - winSize.height/2;
-                    tpq.x = winSize.width + j - winSize.width/2;
-                    A.at<double>(i1*winSize.width + j,0) = diff(tpq,tmpWarp,true);
-                    A.at<double>(i1*winSize.width + j,1) = diff(tpq,tmpWarp,false);
-                    b.at<double>(i1*winSize.width + j,0) = diffTime(tpq,tmpWarp,grayPrev);
+                    tpq.y = current.y*mult + i1 - winSizeTmp.height/2;
+                    tpq.x = current.x*mult + j - winSizeTmp.width/2;
+                    tpq.x -= velocity[i].x*mult;
+                    tpq.y -= velocity[i].y*mult;
+                   //std :: cout << tpq << " point" << std :: endl;
+                    A.at<double>(i1*winSizeTmp.width + j,0) = diff(tpq,grayTmp[s],true);
+                    A.at<double>(i1*winSizeTmp.width + j,1) = diff(tpq,grayTmp[s],false);
+                    b.at<double>(i1*winSizeTmp.width + j,0) = diffTime(tpq,grayTmp[s],grayPrevTmp[s]);
                 }
             }
+            //std :: cout << "I am here" << std :: endl;
             transpose(A,B);
-            tmp = B*W;
-            B = tmp.clone();
-            tmp = B*A;
-            B = tmp.clone();
+            //B *= W;
+            //std :: cout << " and here" << std :: endl;
+            B *= A;
+            //std :: cout << " and here" << std :: endl;
             if(fabs(determinant(B)) > eps*100 )
             {
-                transpose(A,tmp);
-                A = tmp.clone();
-                tmp = B.inv();
-                B = tmp.clone();
-                tmp = B*A;
-                B = tmp.clone();
-                tmp = B*W;
-                B = tmp.clone();
+                std :: cout << " and here" << std :: endl;
+                transpose(A,A);
+                B = B.inv();
+                B *= A;
+                //B*=W;
                 tmp = B*b;
-                Point2f pt(tmp.at<double>(0,1),tmp.at<double>(0,0));
-                //pt.x /= sqrt(pow(pt.x,2) + pow(pt.y,2));
-                //pt.y /= sqrt(pow(pt.x,2) + pow(pt.y,2));
-                //std :: cout << pt << " pt " << std :: endl;
-                velocity[i] += -pt;
+                Point2f pt(tmp.at<double>(0,0),tmp.at<double>(0,1));
+                velocity[i].x += -pt.x/pow(2,s);
+                velocity[i].y += -pt.y/pow(2,s);
             }
+            mult *= 2;
+            winSizeTmp.height *= 2;
+            winSizeTmp.width *= 2;
         }
-        if(norm(velocity[i]) > epsForSpeed)
-        {
-            velocity[i].x /= norm(velocity[i]);
-            velocity[i].y /= norm(velocity[i]);
-        }
-        else
-            velocity[i] = Point2f(0.0, 0.0);
-        //td :: cout << "--------------------------------------------------" << std :: endl;
     }
 }
 void calcOpticalFlowWeightIterPyr()

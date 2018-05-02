@@ -358,8 +358,16 @@ void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & 
         velocity[i] = Point2f(0.0 , 0.0);
         for(int s = 0; s < iter; s++)
         {
-            tmpWarp = grayCur.clone();
-            translateMat(tmpWarp, -velocity[i].x,-velocity[i].y );
+            //tmpWarp = Mat_<uchar>(2*winSize.width, 2*winSize.height);
+            //for(int y = 0; y < 2*winSize.height; y++)
+            //{
+            //    for(int x = 0; x < 2*winSize.width; x++)
+            //        tmpWarp.at<uchar>(y,x) = grayCur.at<uchar>(current.y + y - winSize.height, current.x + x - winSize.height);
+            //}
+            tmpWarp = grayCur(Rect(current.x, current.y, winSize.width*2, winSize.height*2));
+            //imshow("namedWindow", tmpWarp);
+            //waitKey(25);
+            //translateMat(tmpWarp, -velocity[i].x,-velocity[i].y );
             Mat A(winSize.area(),2,CV_64F);
             Mat b(winSize.area(),1,CV_64F);
             Mat tmp;
@@ -369,10 +377,10 @@ void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & 
                 for(int j = 0; j < winSize.width; j++)
                 {
                     Point2f tpq;
-                    tpq.y = current.y + i1 - winSize.height/2;
-                    tpq.x = current.x + j - winSize.width/2;
-                    A.at<double>(i1*winSize.width + j,1) = diff(tpq,tmpWarp,true);
-                    A.at<double>(i1*winSize.width + j,0) = diff(tpq,tmpWarp,false);
+                    tpq.y = winSize.height + i1 - winSize.height/2;
+                    tpq.x = winSize.width + j - winSize.width/2;
+                    A.at<double>(i1*winSize.width + j,0) = diff(tpq,tmpWarp,true);
+                    A.at<double>(i1*winSize.width + j,1) = diff(tpq,tmpWarp,false);
                     b.at<double>(i1*winSize.width + j,0) = diffTime(tpq,tmpWarp,grayPrev);
                 }
             }
@@ -408,6 +416,10 @@ void calcOpticalFlowWeightIter(Mat & grayPrev, Mat & grayCur, vector<Point2f> & 
             velocity[i] = Point2f(0.0, 0.0);
         //td :: cout << "--------------------------------------------------" << std :: endl;
     }
+}
+void calcOpticalFlowWeightIterPyr()
+{
+
 }
 int main(int argv, char ** argc)
 {

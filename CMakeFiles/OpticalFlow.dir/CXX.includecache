@@ -6,7 +6,7 @@
 
 #IncludeRegexTransform: 
 
-/home/dmitry/finalOpticalFlow/main.cpp
+/home/dmitry/GitHub/tmp/finalOpticalFlow/main.cpp
 iostream
 -
 cmath
